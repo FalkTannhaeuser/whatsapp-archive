@@ -129,6 +129,7 @@ def FormatHTML(data):
         </style>
     </head>
     <body>
+        <a name="top"></a>
         <h1>{{ input_basename }}</h1>
         <ol class="users">
         {% for user, messages in by_user %}
@@ -140,6 +141,7 @@ def FormatHTML(data):
                 <li>{{ message[2] | e }}</li>
             {% endfor %}
             </ol>
+            &nbsp;&nbsp;&nbsp;&nbsp;<a href="#top">Zurück nach oben</a>
             </li>
         {% endfor %}
         </ol>
