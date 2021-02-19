@@ -13,7 +13,7 @@ import re
 
 # Format of the standard WhatsApp export line. This is likely to change in the
 # future and so this application will need to be updated.
-DATE_RE = '(?P<date>[\d/-]+)'
+DATE_RE = '(?P<date>[\d/\.-]+)'
 TIME_RE = '(?P<time>[\d:]+( [AP]M)?)'
 DATETIME_RE = '\[?' + DATE_RE + ',? ' + TIME_RE + '\]?'
 SEPARATOR_RE = '( - |: | )'
