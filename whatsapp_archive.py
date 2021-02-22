@@ -11,6 +11,7 @@ import logging
 import os.path
 import re
 import yaml
+import locale
 
 # Format of the standard WhatsApp export line. This is likely to change in the
 # future and so this application will need to be updated.
@@ -131,7 +132,7 @@ def FormatHTML(data):
     </head>
     <body>
         <a name="top"></a>
-        <h1>{{ input_basename }}</h1>
+        <h1>{{ input_basename }}, Stand vom {{ timestamp_str }}</h1>
         <h2>{{ toc_data["title"] }}</h2>
         <ol class="messages">
         {% for item in toc_data["toc"] %}
@@ -157,10 +158,13 @@ def FormatHTML(data):
     </body>
     </html>
     """
-    return jinja2.Environment().from_string(tmpl).render(**data)
+    timestamp_str = datetime.datetime.now().strftime('%A, %x, %H:%M Uhr')
+    return jinja2.Environment().from_string(tmpl).render(timestamp_str=timestamp_str,
+                                                         **data)
 
 
 def main():
+    locale.setlocale(locale.LC_ALL, 'de_DE')
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description='Produce a browsable history '
             'of a WhatsApp conversation')
@@ -182,7 +186,6 @@ def main():
     HTML = re.sub(r'<li>\u200E?(.*\.opus) \(Datei angehängt\)',
                   r'<li><audio controls><source src="\1">Audio kann nicht wiedergegeben werden.</audio>', HTML)
     HTML = re.sub(r'<li>\u200E?(.*) \(Datei angehängt\)', r'<li><img src="\1">', HTML)
-    # HTML = re.sub(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)', r'<a href="\0"\0</a>', HTML)
     HTML = re.sub(r'(https?://[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_\+.~#?&/=;]*)',
                   r'<a href="\1" target="_blank" rel="noopener">\1</a>', HTML)
 
