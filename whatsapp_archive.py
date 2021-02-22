@@ -106,6 +106,13 @@ def FormatHTML(data):
                 font-family: sans-serif;
                 font-size: 10px;
             }
+            img {
+                padding: 0;
+                display: block;
+                margin: 0 auto;
+                max-height: 100%;
+                max-width: 100%;
+            }
             ol.users {
                 list-style-type: none;
                 list-style-position: inside;
