@@ -177,6 +177,15 @@ def main():
             toc_data = yaml.load(fd, yaml.SafeLoader)
     template_data = TemplateData(messages, args.input_file, toc_data)
     HTML = FormatHTML(template_data)
+    HTML = re.sub(r'<li>\u200E?(.*\.mp4) \(Datei angehängt\)',
+                  r'<li><video autoplay muted controls><source src="\1" type="video/mp4">Video kann nicht angezeigt werden.</video>', HTML)
+    HTML = re.sub(r'<li>\u200E?(.*\.opus) \(Datei angehängt\)',
+                  r'<li><audio controls><source src="\1">Audio kann nicht wiedergegeben werden.</audio>', HTML)
+    HTML = re.sub(r'<li>\u200E?(.*) \(Datei angehängt\)', r'<li><img src="\1">', HTML)
+    # HTML = re.sub(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)', r'<a href="\0"\0</a>', HTML)
+    HTML = re.sub(r'(https?://[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_\+.~#?&/=;]*)',
+                  r'<a href="\1" target="_blank" rel="noopener">\1</a>', HTML)
+
     with open(args.output_file, 'w', encoding='utf-8') as fd:
         fd.write(HTML)
 
