@@ -10,6 +10,7 @@ import jinja2
 import logging
 import os.path
 import re
+import yaml
 
 # Format of the standard WhatsApp export line. This is likely to change in the
 # future and so this application will need to be updated.
@@ -79,7 +80,7 @@ def IdentifyMessages(lines):
     return messages
 
 
-def TemplateData(messages, input_filename):
+def TemplateData(messages, input_filename, toc_data):
     """Create a struct suitable for procesing in a template.
     Returns:
         A dictionary of values.
@@ -89,7 +90,7 @@ def TemplateData(messages, input_filename):
     for user, msgs_of_user in itertools.groupby(messages, lambda x: x[1]):
         by_user.append((user, list(msgs_of_user)))
     return dict(by_user=by_user, input_basename=file_basename,
-            input_full_path=input_filename)
+            input_full_path=input_filename, toc_data=toc_data)
 
 
 def FormatHTML(data):
@@ -131,9 +132,17 @@ def FormatHTML(data):
     <body>
         <a name="top"></a>
         <h1>{{ input_basename }}</h1>
+        <h2>{{ toc_data["title"] }}</h2>
+        <ol class="messages">
+        {% for item in toc_data["toc"] %}
+            <li><a href="#{{ item["anchor"] }}">{{ item["text"] }}</a></li>
+        {% endfor %}
+        </ol>
+        <h2>Chat-Archiv</h2>
         <ol class="users">
         {% for user, messages in by_user %}
             <li>
+            <a name="{{ user }} {{ messages[0][0] }}"></a>
             <span class="username">{{ user }}</span>
             <span class="date">{{ messages[0][0] }}</span>
             <ol class="messages">
@@ -156,11 +165,17 @@ def main():
     parser = argparse.ArgumentParser(description='Produce a browsable history '
             'of a WhatsApp conversation')
     parser.add_argument('-i', dest='input_file', required=True)
+    parser.add_argument('-toc', dest='toc_file', default=None)
     parser.add_argument('-o', dest='output_file', required=True)
     args = parser.parse_args()
     with open(args.input_file, 'rt', encoding='utf-8-sig') as fd:
         messages = IdentifyMessages(fd.readlines())
-    template_data = TemplateData(messages, args.input_file)
+    if args.toc_file is None:
+        toc_data = dict(title="", toc=[])
+    else:
+        with open(args.toc_file, 'rt', encoding='utf8') as fd:
+            toc_data = yaml.load(fd, yaml.SafeLoader)
+    template_data = TemplateData(messages, args.input_file, toc_data)
     HTML = FormatHTML(template_data)
     with open(args.output_file, 'w', encoding='utf-8') as fd:
         fd.write(HTML)
