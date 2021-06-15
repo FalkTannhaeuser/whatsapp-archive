@@ -12,6 +12,11 @@ import os.path
 import re
 import yaml
 import locale
+import glob
+import os
+import collections
+import pandas as pd
+
 
 # Format of the standard WhatsApp export line. This is likely to change in the
 # future and so this application will need to be updated.
@@ -51,7 +56,7 @@ def ParseLine(line):
     return None
 
 
-def IdentifyMessages(lines):
+def IdentifyMessages(lines, mlist=None):
     """Input text can contain multi-line messages. If there's a line that
     doesn't start with a date and a name, that's probably a continuation of the
     previous message and should be appended to it.
@@ -67,6 +72,11 @@ def IdentifyMessages(lines):
                 # We have a new message, so there will be no more lines for the
                 # one we've seen previously -- it's complete. Let's add it to
                 # the list.
+                if mlist is not None and msg_body.endswith('<Medien ausgeschlossen>'):
+                    med = mlist[msg_date].pop(0)
+                    msg_body = msg_body.replace('<Medien ausgeschlossen>',
+                                                med + ' (Datei angehängt)')
+                    # print(msg_date, msg_body)
                 messages.append((msg_date, msg_user, msg_body))
             msg_date, msg_user, msg_body = m
         else:
@@ -82,7 +92,7 @@ def IdentifyMessages(lines):
 
 
 def TemplateData(messages, input_filename, toc_data):
-    """Create a struct suitable for procesing in a template.
+    """Create a struct suitable for processing in a template.
     Returns:
         A dictionary of values.
     """
@@ -94,7 +104,7 @@ def TemplateData(messages, input_filename, toc_data):
             input_full_path=input_filename, toc_data=toc_data)
 
 
-def FormatHTML(data):
+def FormatHTML(data, timestamp_str):
     tmpl = """<!DOCTYPE html>
     <html>
     <head>
@@ -139,7 +149,16 @@ def FormatHTML(data):
     </head>
     <body>
         <a name="top"></a>
+        
         <h1>{{ input_basename }}, Stand vom {{ timestamp_str }}</h1>
+        
+        <h2>Links</h2>
+        <ol class="messages">
+        {% for item in toc_data["link_list"] %}
+            <li><a href="{{ item["target"] }}">{{ item["text"] }}</a></li>
+        {% endfor %}
+        </ol>
+
         <h2>{{ toc_data["title"] }}</h2>
         <ol class="messages">
         {% for item in toc_data["toc"] %}
@@ -165,9 +184,76 @@ def FormatHTML(data):
     </body>
     </html>
     """
-    timestamp_str = datetime.datetime.now().strftime('%A, %x, %H:%M Uhr')
     return jinja2.Environment().from_string(tmpl).render(timestamp_str=timestamp_str,
                                                          **data)
+
+def media_list(media_dir):
+    def sort_file_key(f):
+        base, ext = os.path.splitext(f)
+        if base.endswith(')'):
+            return f
+        else:
+            return base + ' (0)' + ext
+        
+    result = collections.defaultdict(list)
+    if media_dir is not None:
+        for f in sorted(glob.glob(os.path.join(media_dir, '*')), key=sort_file_key):
+            if ' ' in f:
+                new_f = f.replace(' ', '_')
+                os.rename(f, new_f)
+                f = new_f
+            a = re.findall(r'(\d\d\d\d-\d\d-\d\d)_at_(\d\d\.\d\d)\.\d\d',
+                           os.path.basename(f))
+            assert len(a) == 1 and len(a[0]) == 2, f'Unexpected filename {f}'
+            result[dateutil.parser.parse(a[0][0] + ' ' + a[0][1].replace('.', ':'))].append(f.replace(os.pathsep, '/'))
+    return result
+
+
+def _insert_dedup(df):
+    df.insert(2, 'dedup', 0)
+    dup_cnt = collections.Counter()
+    for idx, row in df.iterrows():
+        dup_cnt[(row.date, row.user)] += 1
+        df.at[idx, 'dedup'] = dup_cnt[(row.date, row.user)]
+    return df
+
+
+def merge_input_files(input1, input2, mlist):
+    with open(input1, 'rt', encoding='utf-8') as i1fd:
+        messages1 = IdentifyMessages(i1fd.readlines())
+    with open(input2, 'rt', encoding='utf-8') as i2fd:
+        messages2 = IdentifyMessages(i2fd.readlines())
+    df1 = _insert_dedup(pd.DataFrame(messages1, columns=['date', 'user', 'body']))
+    df2 = _insert_dedup(pd.DataFrame(messages2, columns=['date', 'user', 'body']))
+    df = pd.merge(df1, df2, how='outer', on=['date', 'user', 'dedup'], sort=False)
+    msg_list = []
+    for idx, row in df.iterrows():
+        if pd.isna(row.body_x):
+            if row.body_y.endswith('<Medien ausgeschlossen>'):
+                med = mlist[row.date].pop(0)
+                msg_body = row.body_y.replace('<Medien ausgeschlossen>',
+                                              med + ' (Datei angehängt)')
+            else:
+                msg_body = row.body_y
+        elif pd.isna(row.body_y):
+            if row.body_x.endswith('<Medien ausgeschlossen>'):
+                med = mlist[row.date].pop(0)
+                msg_body = row.body_x.replace('<Medien ausgeschlossen>',
+                                              med + ' (Datei angehängt)')
+            else:
+                msg_body = row.body_x
+        elif row.body_x.endswith('<Medien ausgeschlossen>'):
+            med = mlist[row.date].pop(0)
+            msg_body = row.body_x.replace('<Medien ausgeschlossen>',
+                                          f'{med} (Datei angehängt)\n{row.body_y}')
+        elif row.body_y.endswith('<Medien ausgeschlossen>'):
+            med = mlist[row.date].pop(0)
+            msg_body = row.body_y.replace('<Medien ausgeschlossen>',
+                                          f'{med} (Datei angehängt)\n{row.body_x}')
+        else:
+            msg_body = row.body_x if len(row.body_x) > len(row.body_y) else row.body_y
+        msg_list.append((row.date, row.user, msg_body))
+    return msg_list
 
 
 def main():
@@ -176,21 +262,29 @@ def main():
     parser = argparse.ArgumentParser(description='Produce a browsable history '
             'of a WhatsApp conversation')
     parser.add_argument('-i', dest='input_file', required=True)
+    parser.add_argument('-i2', dest='input_file2', default=None)
     parser.add_argument('-toc', dest='toc_file', default=None)
     parser.add_argument('-o', dest='output_file', required=True)
+    parser.add_argument('-m', dest='media_dir', default=None)
     args = parser.parse_args()
-    with open(args.input_file, 'rt', encoding='utf-8-sig') as fd:
-        messages = IdentifyMessages(fd.readlines())
+    mlist = media_list(args.media_dir)
+    if args.input_file2 is None:
+        with open(args.input_file, 'rt', encoding='utf-8-sig') as fd:
+            messages = IdentifyMessages(fd.readlines(), mlist)
+    else:
+        messages = merge_input_files(args.input_file, args.input_file2, mlist)
     if args.toc_file is None:
         toc_data = dict(title="", toc=[])
     else:
         with open(args.toc_file, 'rt', encoding='utf8') as fd:
             toc_data = yaml.load(fd, yaml.SafeLoader)
     template_data = TemplateData(messages, args.input_file, toc_data)
-    HTML = FormatHTML(template_data)
+    input_stat = os.stat(args.input_file)
+    timestamp_str = datetime.datetime.fromtimestamp(input_stat.st_ctime).strftime('%A, %x, %H:%M Uhr')
+    HTML = FormatHTML(template_data, timestamp_str)
     HTML = re.sub(r'<li>\u200E?(.*\.mp4) \(Datei angehängt\)',
-                  r'<li><video autoplay muted controls><source src="\1" type="video/mp4">Video kann nicht angezeigt werden.</video>', HTML)
-    HTML = re.sub(r'<li>\u200E?(.*\.opus) \(Datei angehängt\)',
+                  r'<li><video controls><source src="\1" type="video/mp4">Video kann nicht angezeigt werden.</video>', HTML)
+    HTML = re.sub(r'<li>\u200E?(.*\.opus|.*\.ogg) \(Datei angehängt\)',
                   r'<li><audio controls><source src="\1">Audio kann nicht wiedergegeben werden.</audio>', HTML)
     HTML = re.sub(r'<li>\u200E?(.*) \(Datei angehängt\)', r'<li><img src="\1">', HTML)
     HTML = re.sub(r'(https?://[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_\+.~#?&/=;]*)',
