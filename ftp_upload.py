@@ -36,6 +36,9 @@ ftp.dir()
 for f in ('Klasse_10_b.html', 'index.html'):
     with open(os.path.join(local_root, f), 'rb') as fd:
         ftp.storlines(f'STOR {f}', fd)
+for f in glob.glob(os.path.join(local_root, d, '*.vcf')):
+    with open(f, 'rb') as fd:
+        ftp.storbinary(f'STOR {f}', fd)
 print(f'{colorama.Fore.RED}/{colorama.Style.RESET_ALL} after uploading:')
 ftp.dir()
 ftp.quit()

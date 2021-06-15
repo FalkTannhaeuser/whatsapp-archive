@@ -204,8 +204,10 @@ def media_list(media_dir):
                 f = new_f
             a = re.findall(r'(\d\d\d\d-\d\d-\d\d)_at_(\d\d\.\d\d)\.\d\d',
                            os.path.basename(f))
-            assert len(a) == 1 and len(a[0]) == 2, f'Unexpected filename {f}'
-            result[dateutil.parser.parse(a[0][0] + ' ' + a[0][1].replace('.', ':'))].append(f.replace(os.pathsep, '/'))
+            if len(a) == 1 and len(a[0]) == 2:
+                result[dateutil.parser.parse(a[0][0] + ' ' + a[0][1].replace('.', ':'))].append(f.replace(os.sep, '/'))
+            else:
+                print(f'Ignoring file {f}')
     return result
 
 
@@ -286,6 +288,7 @@ def main():
                   r'<li><video controls><source src="\1" type="video/mp4">Video kann nicht angezeigt werden.</video>', HTML)
     HTML = re.sub(r'<li>\u200E?(.*\.opus|.*\.ogg) \(Datei angehängt\)',
                   r'<li><audio controls><source src="\1">Audio kann nicht wiedergegeben werden.</audio>', HTML)
+    HTML = re.sub(r'<li>\u200E?(.*\.vcf) \(Datei angehängt\)', r'<li><a href="\1">\1</a>', HTML)
     HTML = re.sub(r'<li>\u200E?(.*) \(Datei angehängt\)', r'<li><img src="\1">', HTML)
     HTML = re.sub(r'(https?://[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_\+.~#?&/=;]*)',
                   r'<a href="\1" target="_blank" rel="noopener">\1</a>', HTML)
