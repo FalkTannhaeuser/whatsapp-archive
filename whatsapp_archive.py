@@ -227,31 +227,23 @@ def merge_input_files(input1, input2, mlist):
         messages2 = IdentifyMessages(i2fd.readlines())
     df1 = _insert_dedup(pd.DataFrame(messages1, columns=['date', 'user', 'body']))
     df2 = _insert_dedup(pd.DataFrame(messages2, columns=['date', 'user', 'body']))
-    df = pd.merge(df1, df2, how='outer', on=['date', 'user', 'dedup'], sort=False)
+    # df = pd.merge_asof(df1, df2, on='date', by=['user', 'dedup'],
+    #                    tolerance=pd.Timedelta('1min'))
+    df = pd.merge(df1, df2, how='outer', on=['date', 'user', 'dedup'], validate='one_to_one')
+    print(f'df1: {df1.shape[0]}, df2: {df2.shape[0]}, df: {df.shape[0]}, NA: {df.body_x.isna().sum()}, {df.body_y.isna().sum()}')
     msg_list = []
+    df.fillna('', inplace=True)
     for idx, row in df.iterrows():
-        if pd.isna(row.body_x):
-            if row.body_y.endswith('<Medien ausgeschlossen>'):
-                med = mlist[row.date].pop(0)
-                msg_body = row.body_y.replace('<Medien ausgeschlossen>',
-                                              med + ' (Datei angehängt)')
-            else:
-                msg_body = row.body_y
-        elif pd.isna(row.body_y):
-            if row.body_x.endswith('<Medien ausgeschlossen>'):
-                med = mlist[row.date].pop(0)
-                msg_body = row.body_x.replace('<Medien ausgeschlossen>',
-                                              med + ' (Datei angehängt)')
-            else:
-                msg_body = row.body_x
-        elif row.body_x.endswith('<Medien ausgeschlossen>'):
-            med = mlist[row.date].pop(0)
-            msg_body = row.body_x.replace('<Medien ausgeschlossen>',
-                                          f'{med} (Datei angehängt)\n{row.body_y}')
+        if row.body_x.endswith('<Medien ausgeschlossen>'):
+            med = f'{mlist[row.date].pop(0)} (Datei angehängt)' if mlist[row.date] else '[Datei fehlt]'
+            msg_body = row.body_x.replace('<Medien ausgeschlossen>', med)
+            if row.body_y:
+                msg_body += '\n' + row.body_y
         elif row.body_y.endswith('<Medien ausgeschlossen>'):
-            med = mlist[row.date].pop(0)
-            msg_body = row.body_y.replace('<Medien ausgeschlossen>',
-                                          f'{med} (Datei angehängt)\n{row.body_x}')
+            med = f'{mlist[row.date].pop(0)} (Datei angehängt)' if mlist[row.date] else '[Datei fehlt]'
+            msg_body = row.body_y.replace('<Medien ausgeschlossen>', med)
+            if row.body_x:
+                msg_body += '\n' + row.body_x
         else:
             msg_body = row.body_x if len(row.body_x) > len(row.body_y) else row.body_y
         msg_list.append((row.date, row.user, msg_body))
@@ -281,9 +273,9 @@ def main():
         with open(args.toc_file, 'rt', encoding='utf8') as fd:
             toc_data = yaml.load(fd, yaml.SafeLoader)
     template_data = TemplateData(messages, args.input_file, toc_data)
-    input_stat = os.stat(args.input_file)
-    timestamp_str = datetime.datetime.fromtimestamp(input_stat.st_ctime).strftime('%A, %x, %H:%M Uhr')
-    HTML = FormatHTML(template_data, timestamp_str)
+    # input_stat = os.stat(args.input_file)
+    # timestamp_str = datetime.datetime.fromtimestamp(input_stat.st_ctime).strftime('%A, %x, %H:%M Uhr')
+    HTML = FormatHTML(template_data, messages[-1][0].strftime('%A, %x, %H:%M Uhr'))
     HTML = re.sub(r'<li>\u200E?(.*\.mp4) \(Datei angehängt\)',
                   r'<li><video controls><source src="\1" type="video/mp4">Video kann nicht angezeigt werden.</video>', HTML)
     HTML = re.sub(r'<li>\u200E?(.*\.opus|.*\.ogg) \(Datei angehängt\)',
@@ -292,9 +284,15 @@ def main():
     HTML = re.sub(r'<li>\u200E?(.*) \(Datei angehängt\)', r'<li><img src="\1">', HTML)
     HTML = re.sub(r'(https?://[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_\+.~#?&/=;]*)',
                   r'<a href="\1" target="_blank" rel="noopener">\1</a>', HTML)
-
+    if 'phpMyVisites' in toc_data:
+        HTML = re.sub('(</head>)', rf"{toc_data['phpMyVisites']}\1", HTML)
     with open(args.output_file, 'w', encoding='utf-8') as fd:
         fd.write(HTML)
+    cnt = collections.Counter(x[0] for x in template_data['by_user'])
+    
+    for usr, n in sorted(cnt.items(), key=lambda a: a[0].split()[-1]):
+        print(f'{n:4}  {usr}')
+    print(f'Total: {sum(cnt.values())} messages from {len(cnt)} users')
 
 
 if __name__ == '__main__':

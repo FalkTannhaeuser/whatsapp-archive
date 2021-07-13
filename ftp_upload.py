@@ -16,7 +16,7 @@ ftp = FTP('falk.tannhauser.free.fr')
 print(ftp.getwelcome())
 ftp.login('falk.tannhauser', 'wiewiork')
 for d in ('Klasse_10_b-Dateien',
-          # 'WhatsApp_Media',
+          'WhatsApp_Media',
           ):
     try:
         ftp.mkd(d)
@@ -33,7 +33,7 @@ for d in ('Klasse_10_b-Dateien',
     ftp.cwd('..')
 print(f'{colorama.Fore.RED}/{colorama.Style.RESET_ALL} before uploading:')
 ftp.dir()
-for f in ('Klasse_10_b.html', 'index.html'):
+for f in ('Klasse_10_b.html', 'index.html', 'robots.txt'):
     with open(os.path.join(local_root, f), 'rb') as fd:
         ftp.storlines(f'STOR {f}', fd)
 for f in glob.glob(os.path.join(local_root, d, '*.vcf')):
